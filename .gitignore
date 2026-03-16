@@ -47,3 +47,4 @@ docker/data/
 frontend/node_modules/
 frontend/dist/
 frontend/.playwright-mcp/
+frontend/README.md
