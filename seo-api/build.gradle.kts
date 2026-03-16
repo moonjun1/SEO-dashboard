@@ -19,6 +19,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    implementation("org.jsoup:jsoup:1.18.3")
+
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:$springdocVersion")
 
     implementation("io.jsonwebtoken:jjwt-api:$jjwtVersion")
