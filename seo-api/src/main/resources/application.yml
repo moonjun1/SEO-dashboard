@@ -1,0 +1,75 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: seo-dashboard-api
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:seo_dashboard}
+    username: ${DB_USERNAME:seo_user}
+    password: ${DB_PASSWORD:seo_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 100
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+jwt:
+  secret: ${JWT_SECRET:c2VvLWRhc2hib2FyZC1zZWNyZXQta2V5LWZvci1kZXZlbG9wbWVudC1vbmx5LWNoYW5nZS1pbi1wcm9kdWN0aW9u}
+  access-token-expiration: 1800000    # 30 minutes
+  refresh-token-expiration: 1209600000 # 14 days
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+crawler:
+  max-concurrent-requests: 5
+  request-timeout-ms: 10000
+  user-agent: "SeoDashboard-Crawler/1.0"
+  delay-between-requests-ms: 200
+
+ai:
+  provider: mock  # mock | openai | claude
+  mock:
+    delay-ms: 2000
+
+logging:
+  level:
+    com.seodashboard: INFO
+    org.springframework.security: INFO
