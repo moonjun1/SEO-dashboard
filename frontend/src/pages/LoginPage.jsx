@@ -26,7 +26,7 @@ export default function LoginPage() {
         const res = await post('/auth/signup', { email, password, name });
         login(res.data.accessToken);
       }
-      navigate('/');
+      navigate('/dashboard');
     } catch (err) {
       setError(err.message || 'An error occurred');
     } finally {

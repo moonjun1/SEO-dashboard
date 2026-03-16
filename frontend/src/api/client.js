@@ -64,3 +64,29 @@ export function put(url, body) {
 export function del(url) {
   return fetchApi(url, { method: 'DELETE' });
 }
+
+/* ============================================
+   Public API (no auth required)
+   ============================================ */
+
+export async function publicGet(url) {
+  const response = await fetch(`${BASE_URL}${url}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+export async function publicPost(url, body) {
+  const response = await fetch(`${BASE_URL}${url}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || `HTTP ${response.status}`);
+  }
+  return data;
+}
