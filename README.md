@@ -2,9 +2,33 @@
 
 올인원 SEO 분석 대시보드 - 사이트 크롤링, 키워드 순위 추적, AI 콘텐츠 최적화를 하나의 플랫폼에서 제공합니다.
 
+**로그인 없이 누구나 즉시 SEO 진단 가능!** URL만 입력하면 웹사이트의 SEO 상태를 분석합니다.
+
 ## Screenshots
 
-### 로그인
+### SEO 진단 검사기 (공개 - 로그인 불필요)
+
+#### 랜딩 페이지
+URL을 입력하면 즉시 SEO 분석을 시작합니다. 로그인이 필요 없습니다.
+![Landing](docs/screenshots/13-landing.png)
+
+#### SEO 분석 결과 - eventcat
+종합 점수, 메타태그, 체크리스트, 헤딩 구조, 링크, 성능, 개선사항을 한눈에 확인합니다.
+![Result EventCAT](docs/screenshots/14-public-result.png)
+
+#### SEO 분석 결과 - naver.com
+네이버 SEO 분석: 83점. 타이틀 길이 부족, 메타 디스크립션 짧음, H2 없음 등 이슈 감지.
+![Result Naver](docs/screenshots/18-naver-full.png)
+
+#### SEO 점수 순위표
+분석된 사이트들의 SEO 점수 순위를 확인합니다.
+![Ranking](docs/screenshots/16-ranking.png)
+
+---
+
+### 관리자 대시보드 (로그인 필요)
+
+#### 로그인
 ![Login](docs/screenshots/01-login.png)
 
 ### 종합 대시보드
@@ -126,6 +150,17 @@ seo-dashboard/
 
 ## 핵심 기능
 
+### 0. 공개 SEO 진단 (로그인 불필요)
+- URL 입력만으로 즉시 SEO 분석 (로그인 없이 누구나 사용 가능)
+- 종합 SEO 점수 (0~100)
+- 메타태그 전체 수집 및 분석 (title, description, OG, Twitter Card 등)
+- 체크리스트: HTTPS, OG 태그, Twitter Card, Viewport, Favicon, Robots.txt, Sitemap.xml
+- 헤딩 구조 분석 (H1~H6)
+- 링크 분석 (내부/외부/깨진 링크)
+- 페이지 성능 (응답시간, 크기)
+- SEO 이슈 및 개선 제안
+- SEO 점수 순위표
+
 ### 1. 사이트 크롤링 & SEO 분석
 - BFS 기반 사이트 전체 크롤링 (maxPages, maxDepth 설정 가능)
 - robots.txt / sitemap.xml 존재 여부 체크
@@ -163,7 +198,16 @@ seo-dashboard/
 
 ---
 
-## API 엔드포인트 (36개)
+## API 엔드포인트 (41개)
+
+### 공개 SEO 진단 (5개, 인증 불필요)
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/public/analyze` | URL SEO 분석 (즉시 결과 반환) |
+| GET | `/api/v1/public/analyze/{id}` | 분석 결과 조회 |
+| GET | `/api/v1/public/recent` | 최근 분석 목록 (20개) |
+| GET | `/api/v1/public/ranking` | SEO 점수 순위 (상위 50개) |
+| GET | `/api/v1/public/domain/{domain}` | 도메인별 분석 이력 |
 
 ### 인증 (5개)
 | Method | Endpoint | 설명 |
