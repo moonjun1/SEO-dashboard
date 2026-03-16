@@ -6,15 +6,14 @@ import PublicNav from '../components/PublicNav';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 function ScoreMiniCard({ label, score }) {
-  const color = getScoreColor(score);
+  const numScore = typeof score === 'number' ? Math.round(score) : null;
+  const color = getScoreColor(numScore);
   return (
     <div className="score-mini-card">
-      <div className="score-mini-value" style={{ color }}>{score ?? '-'}</div>
+      <div className="score-mini-value" style={{ color }}>{numScore ?? '-'}</div>
       <div className="score-mini-bar">
-        <div
-          className="score-mini-bar-fill"
-          style={{ width: `${Math.min(score ?? 0, 100)}%`, background: color }}
-        />
+        <div className="score-mini-bar-fill"
+          style={{ width: `${Math.min(numScore ?? 0, 100)}%`, background: color }} />
       </div>
       <div className="score-mini-label">{label}</div>
     </div>
@@ -37,9 +36,7 @@ function MetaField({ label, value, length }) {
     <div className="meta-field">
       <label>{label}</label>
       <div className="meta-code">{value || '-'}</div>
-      {length != null && (
-        <span className="meta-length">{length}자</span>
-      )}
+      {length != null && <span className="meta-length">{length}자</span>}
     </div>
   );
 }
@@ -60,78 +57,57 @@ export default function PublicResultPage() {
 
   if (loading) {
     return (
-      <div className="landing-page">
-        <PublicNav />
-        <div style={{ paddingTop: 120 }}>
-          <LoadingSpinner size={48} text="분석 결과를 불러오는 중..." />
-        </div>
+      <div className="landing-page"><PublicNav />
+        <div style={{ paddingTop: 120 }}><LoadingSpinner size={48} text="분석 결과를 불러오는 중..." /></div>
       </div>
     );
   }
 
-  if (error) {
+  if (error || !data) {
     return (
-      <div className="landing-page">
-        <PublicNav />
+      <div className="landing-page"><PublicNav />
         <div className="result-page">
-          <div className="alert alert-error">{error}</div>
-          <Link to="/" className="btn btn-primary" style={{ marginTop: 16 }}>
-            돌아가기
-          </Link>
+          <div className="alert alert-error">{error || '데이터를 찾을 수 없습니다'}</div>
+          <Link to="/" className="btn btn-primary" style={{ marginTop: 16 }}>돌아가기</Link>
         </div>
       </div>
     );
   }
 
-  if (!data) return null;
+  // 플랫 구조에서 직접 매핑
+  const totalScore = Math.round(data.seoScore ?? 0);
+  const issues = Array.isArray(data.issues) ? data.issues : [];
+  const metaTags = Array.isArray(data.metaTags) ? data.metaTags : [];
+  const linkList = Array.isArray(data.linkList) ? data.linkList : [];
+  const headingStructure = Array.isArray(data.headingStructure) ? data.headingStructure : [];
 
-  const totalScore = data.totalScore ?? data.score ?? data.seoScore ?? 0;
-  const scores = data.scores || {};
-  const meta = data.meta || {};
-  const checklist = data.checklist || {};
-  const headings = data.headings || {};
-  const links = data.links || {};
-  const performance = data.performance || {};
-  const issues = data.issues || [];
-  const metaTags = data.metaTags || data.meta_tags || [];
-  const analyzedAt = data.analyzedAt || data.created_at || data.createdAt;
-
-  const scoreItems = [
-    { label: '타이틀', score: scores.title ?? scores.titleScore },
-    { label: '메타 디스크립션', score: scores.description ?? scores.descriptionScore ?? scores.metaDescription },
-    { label: '헤딩', score: scores.heading ?? scores.headingScore ?? scores.headings },
-    { label: '이미지', score: scores.image ?? scores.imageScore ?? scores.images },
-    { label: '링크', score: scores.link ?? scores.linkScore ?? scores.links },
-    { label: '성능', score: scores.performance ?? scores.performanceScore ?? scores.speed },
-  ];
-
+  // 헤딩 카운트 계산
+  const headingCounts = { h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
+  headingStructure.forEach((h) => {
+    const level = (h.level || '').toLowerCase();
+    if (headingCounts[level] !== undefined) headingCounts[level]++;
+  });
   const headingEntries = [
-    { tag: 'H1', count: headings.h1 ?? 0 },
-    { tag: 'H2', count: headings.h2 ?? 0 },
-    { tag: 'H3', count: headings.h3 ?? 0 },
-    { tag: 'H4', count: headings.h4 ?? 0 },
-    { tag: 'H5', count: headings.h5 ?? 0 },
-    { tag: 'H6', count: headings.h6 ?? 0 },
+    { tag: 'H1', count: headingCounts.h1 },
+    { tag: 'H2', count: headingCounts.h2 },
+    { tag: 'H3', count: headingCounts.h3 },
+    { tag: 'H4', count: headingCounts.h4 },
+    { tag: 'H5', count: headingCounts.h5 },
+    { tag: 'H6', count: headingCounts.h6 },
   ];
   const maxHeading = Math.max(...headingEntries.map((h) => h.count), 1);
-
-  const linkList = links.list || links.items || [];
-  const internalCount = links.internal ?? links.internalCount ?? 0;
-  const externalCount = links.external ?? links.externalCount ?? 0;
-  const brokenCount = links.broken ?? links.brokenCount ?? 0;
 
   return (
     <div className="landing-page">
       <PublicNav />
-
       <div className="result-page">
+
+        {/* 헤더: URL + 종합 점수 */}
         <div className="result-header card">
           <div className="result-header-info">
-            <h1 className="result-url">{data.url || data.domain || '-'}</h1>
-            {analyzedAt && (
-              <p className="text-muted">
-                분석 일시: {new Date(analyzedAt).toLocaleString('ko-KR')}
-              </p>
+            <h1 className="result-url">{data.url || data.domain}</h1>
+            {data.createdAt && (
+              <p className="text-muted">분석 일시: {new Date(data.createdAt).toLocaleString('ko-KR')}</p>
             )}
           </div>
           <div className="result-header-gauge">
@@ -140,55 +116,35 @@ export default function PublicResultPage() {
           </div>
         </div>
 
-        {/* Score cards */}
+        {/* 6개 카테고리별 점수 */}
         <div className="score-grid">
-          {scoreItems.map((s, i) => (
-            <ScoreMiniCard key={i} label={s.label} score={s.score} />
-          ))}
+          <ScoreMiniCard label="타이틀" score={data.titleScore} />
+          <ScoreMiniCard label="메타 디스크립션" score={data.metaDescriptionScore} />
+          <ScoreMiniCard label="헤딩" score={data.headingScore} />
+          <ScoreMiniCard label="이미지" score={data.imageScore} />
+          <ScoreMiniCard label="링크" score={data.linkScore} />
+          <ScoreMiniCard label="성능" score={data.performanceScore} />
         </div>
 
-        {/* Meta information */}
+        {/* 메타 정보 */}
         <section className="card result-section">
           <h2 className="section-title">메타 정보</h2>
           <div className="meta-result">
-            <MetaField
-              label="페이지 타이틀"
-              value={meta.title || data.title}
-              length={meta.titleLength ?? (meta.title || data.title || '').length}
-            />
-            <MetaField
-              label="메타 디스크립션"
-              value={meta.description || data.description}
-              length={meta.descriptionLength ?? (meta.description || data.description || '').length}
-            />
-            <MetaField
-              label="Canonical URL"
-              value={meta.canonical || data.canonical}
-            />
+            <MetaField label="페이지 타이틀" value={data.title} length={(data.title || '').length} />
+            <MetaField label="메타 디스크립션" value={data.metaDescription} length={(data.metaDescription || '').length} />
+            <MetaField label="Canonical URL" value={data.canonicalUrl} />
           </div>
-
           {metaTags.length > 0 && (
             <>
-              <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 20, marginBottom: 8 }}>
-                모든 메타태그
-              </h3>
+              <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 20, marginBottom: 8 }}>모든 메타태그</h3>
               <div style={{ overflowX: 'auto' }}>
                 <table className="table meta-tags-table">
-                  <thead>
-                    <tr>
-                      <th>Name / Property</th>
-                      <th>Content</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Name / Property</th><th>Content</th></tr></thead>
                   <tbody>
                     {metaTags.map((tag, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                          {tag.name || tag.property || tag.httpEquiv || '-'}
-                        </td>
-                        <td style={{ wordBreak: 'break-all', fontSize: 13 }}>
-                          {tag.content || '-'}
-                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{tag.name || tag.property || tag.httpEquiv || '-'}</td>
+                        <td style={{ wordBreak: 'break-all', fontSize: 13 }}>{tag.content || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -198,32 +154,29 @@ export default function PublicResultPage() {
           )}
         </section>
 
-        {/* Checklist */}
+        {/* 체크리스트 */}
         <section className="card result-section">
           <h2 className="section-title">체크리스트</h2>
           <div className="checklist-grid">
-            <CheckItem label="HTTPS" passed={checklist.https ?? checklist.isHttps} />
-            <CheckItem label="OG 태그" passed={checklist.ogTags ?? checklist.og ?? checklist.openGraph} />
-            <CheckItem label="Twitter Card" passed={checklist.twitterCard ?? checklist.twitter} />
-            <CheckItem label="Viewport (모바일)" passed={checklist.viewport ?? checklist.mobileViewport} />
-            <CheckItem label="Favicon" passed={checklist.favicon} />
-            <CheckItem label="Robots.txt" passed={checklist.robotsTxt ?? checklist.robots} />
-            <CheckItem label="Sitemap.xml" passed={checklist.sitemap ?? checklist.sitemapXml} />
+            <CheckItem label="HTTPS" passed={data.hasHttps} />
+            <CheckItem label="OG 태그" passed={data.hasOgTags} />
+            <CheckItem label="Twitter Card" passed={data.hasTwitterCards} />
+            <CheckItem label="Viewport (모바일)" passed={data.hasViewport} />
+            <CheckItem label="Favicon" passed={data.hasFavicon} />
+            <CheckItem label="Robots.txt" passed={data.hasRobotsTxt} />
+            <CheckItem label="Sitemap.xml" passed={data.hasSitemap} />
           </div>
         </section>
 
-        {/* Headings */}
+        {/* 헤딩 구조 */}
         <section className="card result-section">
-          <h2 className="section-title">헤딩 구조</h2>
+          <h2 className="section-title">헤딩 구조 (총 {data.totalHeadings ?? 0}개)</h2>
           <div className="heading-chart">
             {headingEntries.map((h) => (
               <div className="heading-row" key={h.tag}>
                 <span className="heading-tag">{h.tag}</span>
                 <div className="heading-bar-bg">
-                  <div
-                    className="heading-bar-fill"
-                    style={{ width: `${(h.count / maxHeading) * 100}%` }}
-                  />
+                  <div className="heading-bar-fill" style={{ width: `${(h.count / maxHeading) * 100}%` }} />
                 </div>
                 <span className="heading-count">{h.count}</span>
               </div>
@@ -231,46 +184,37 @@ export default function PublicResultPage() {
           </div>
         </section>
 
-        {/* Links */}
+        {/* 링크 분석 */}
         <section className="card result-section">
           <h2 className="section-title">링크 분석</h2>
           <div className="link-stats">
             <div className="link-stat-card">
-              <div className="link-stat-value">{internalCount}</div>
+              <div className="link-stat-value">{data.internalLinks ?? 0}</div>
               <div className="link-stat-label">내부 링크</div>
             </div>
             <div className="link-stat-card">
-              <div className="link-stat-value">{externalCount}</div>
+              <div className="link-stat-value">{data.externalLinks ?? 0}</div>
               <div className="link-stat-label">외부 링크</div>
             </div>
-            <div className="link-stat-card" style={{ borderColor: brokenCount > 0 ? 'var(--danger)' : undefined }}>
-              <div className="link-stat-value" style={{ color: brokenCount > 0 ? 'var(--danger)' : undefined }}>
-                {brokenCount}
+            <div className="link-stat-card" style={{ borderColor: (data.brokenLinks ?? 0) > 0 ? 'var(--danger)' : undefined }}>
+              <div className="link-stat-value" style={{ color: (data.brokenLinks ?? 0) > 0 ? 'var(--danger)' : undefined }}>
+                {data.brokenLinks ?? 0}
               </div>
               <div className="link-stat-label">깨진 링크</div>
             </div>
           </div>
-
           {linkList.length > 0 && (
             <div style={{ overflowX: 'auto', marginTop: 16 }}>
               <table className="table">
-                <thead>
-                  <tr>
-                    <th>URL</th>
-                    <th>텍스트</th>
-                    <th style={{ width: 80 }}>유형</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>URL</th><th>텍스트</th><th style={{ width: 80 }}>유형</th></tr></thead>
                 <tbody>
                   {linkList.slice(0, 50).map((link, i) => (
                     <tr key={i}>
-                      <td className="url-cell" style={{ maxWidth: 300 }}>
-                        {link.url || link.href || '-'}
-                      </td>
-                      <td>{link.text || link.anchorText || '-'}</td>
+                      <td className="url-cell" style={{ maxWidth: 300 }}>{link.href || '-'}</td>
+                      <td>{link.text || '-'}</td>
                       <td>
-                        <span className={`status-badge ${link.type === 'internal' || link.internal ? 'status-completed' : 'status-pending'}`}>
-                          {link.type === 'internal' || link.internal ? '내부' : '외부'}
+                        <span className={`status-badge ${link.internal ? 'status-completed' : 'status-pending'}`}>
+                          {link.internal ? '내부' : '외부'}
                         </span>
                       </td>
                     </tr>
@@ -281,47 +225,43 @@ export default function PublicResultPage() {
           )}
         </section>
 
-        {/* Performance */}
+        {/* 성능 */}
         <section className="card result-section">
           <h2 className="section-title">성능</h2>
           <div className="perf-stats">
             <div className="perf-stat">
               <span className="perf-stat-label">응답 시간</span>
-              <span className="perf-stat-value">
-                {performance.responseTime ?? performance.response_time ?? '-'} ms
-              </span>
+              <span className="perf-stat-value">{data.responseTimeMs ?? '-'} ms</span>
             </div>
             <div className="perf-stat">
               <span className="perf-stat-label">페이지 크기</span>
               <span className="perf-stat-value">
-                {performance.pageSize ?? performance.page_size
-                  ? `${Math.round((performance.pageSize ?? performance.page_size) / 1024)} KB`
-                  : '-'}
+                {data.contentLength ? `${Math.round(data.contentLength / 1024)} KB` : '-'}
+              </span>
+            </div>
+            <div className="perf-stat">
+              <span className="perf-stat-label">이미지</span>
+              <span className="perf-stat-value">
+                {data.totalImages ?? 0}개 (alt 없음: {data.imagesWithoutAlt ?? 0}개)
               </span>
             </div>
           </div>
         </section>
 
-        {/* Issues */}
+        {/* 이슈 */}
         {issues.length > 0 && (
           <section className="card result-section">
-            <h2 className="section-title">이슈 및 개선사항</h2>
+            <h2 className="section-title">이슈 및 개선사항 ({issues.length}건)</h2>
             <ul className="issue-list">
               {issues.map((issue, i) => {
-                const severity = (issue.severity || issue.level || 'info').toLowerCase();
-                let severityClass = 'severity-info';
-                let severityLabel = '정보';
-                if (severity === 'error' || severity === 'critical' || severity === 'high') {
-                  severityClass = 'severity-critical';
-                  severityLabel = '오류';
-                } else if (severity === 'warning' || severity === 'medium') {
-                  severityClass = 'severity-warning';
-                  severityLabel = '경고';
-                }
+                const sev = (issue.severity || 'info').toLowerCase();
+                let cls = 'severity-info', label = '정보';
+                if (sev === 'error' || sev === 'critical') { cls = 'severity-critical'; label = '오류'; }
+                else if (sev === 'warning') { cls = 'severity-warning'; label = '경고'; }
                 return (
                   <li key={i} className="issue-item">
-                    <span className={`issue-severity ${severityClass}`}>{severityLabel}</span>
-                    <span>{issue.message || issue.description || issue.text}</span>
+                    <span className={`issue-severity ${cls}`}>{label}</span>
+                    <span>{issue.message}</span>
                   </li>
                 );
               })}
@@ -330,9 +270,7 @@ export default function PublicResultPage() {
         )}
 
         <div style={{ textAlign: 'center', marginTop: 32, marginBottom: 48 }}>
-          <Link to="/" className="btn btn-primary">
-            다른 사이트 분석하기
-          </Link>
+          <Link to="/" className="btn btn-primary">다른 사이트 분석하기</Link>
         </div>
       </div>
     </div>
