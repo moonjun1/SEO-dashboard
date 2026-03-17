@@ -30,7 +30,7 @@ export async function fetchApi(url, options = {}) {
 
   if (response.status === 401) {
     removeToken();
-    window.location.href = '/login';
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
     throw new Error('Unauthorized');
   }
 

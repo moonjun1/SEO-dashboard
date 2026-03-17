@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getToken, setToken as saveToken, removeToken } from '../api/client';
 
 const AuthContext = createContext(null);
@@ -6,6 +7,12 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  const logout = useCallback(() => {
+    removeToken();
+    setUser(null);
+  }, []);
 
   useEffect(() => {
     const token = getToken();
@@ -25,6 +32,15 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      logout();
+      navigate('/login', { replace: true });
+    };
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [logout, navigate]);
+
   const login = (token) => {
     saveToken(token);
     try {
@@ -33,11 +49,6 @@ export function AuthProvider({ children }) {
     } catch {
       setUser({ email: 'user' });
     }
-  };
-
-  const logout = () => {
-    removeToken();
-    setUser(null);
   };
 
   return (
