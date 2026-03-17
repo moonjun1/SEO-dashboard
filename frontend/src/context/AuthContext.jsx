@@ -12,7 +12,12 @@ export function AuthProvider({ children }) {
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        setUser({ id: payload.user_id, email: payload.email });
+        // Check token expiration
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          removeToken();
+        } else {
+          setUser({ id: payload.sub, email: payload.email });
+        }
       } catch {
         removeToken();
       }
@@ -24,7 +29,7 @@ export function AuthProvider({ children }) {
     saveToken(token);
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      setUser({ id: payload.user_id, email: payload.email });
+      setUser({ id: payload.sub, email: payload.email });
     } catch {
       setUser({ email: 'user' });
     }
