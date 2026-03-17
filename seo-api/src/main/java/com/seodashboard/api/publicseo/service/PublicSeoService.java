@@ -15,9 +15,15 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.seodashboard.common.exception.BusinessException;
+import com.seodashboard.common.exception.ErrorCode;
+import com.seodashboard.common.util.UrlValidator;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -36,9 +42,18 @@ public class PublicSeoService {
     private final PublicAnalysisRepository publicAnalysisRepository;
     private final ObjectMapper objectMapper;
 
+    @CacheEvict(value = "publicRanking", allEntries = true)
     @Transactional
     public PublicAnalysisResponse analyze(String rawUrl) {
         String url = normalizeUrl(rawUrl);
+
+        // SSRF protection: block private IPs, localhost, cloud metadata
+        try {
+            UrlValidator.validateForFetch(url);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid URL: " + e.getMessage());
+        }
+
         String domain = extractDomain(url);
 
         // Create initial record with ANALYZING status
@@ -152,10 +167,11 @@ public class PublicSeoService {
         }
     }
 
+    @Cacheable(value = "publicAnalysis", key = "#id", unless = "#result.status() != 'COMPLETED'")
     @Transactional(readOnly = true)
     public PublicAnalysisResponse getAnalysis(Long id) {
         PublicAnalysis analysis = publicAnalysisRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Analysis not found: " + id));
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_NOT_FOUND));
         return toResponse(analysis);
     }
 
@@ -167,6 +183,7 @@ public class PublicSeoService {
                 .toList();
     }
 
+    @Cacheable(value = "publicRanking")
     @Transactional(readOnly = true)
     public List<PublicAnalysisListResponse> getRanking() {
         return publicAnalysisRepository
