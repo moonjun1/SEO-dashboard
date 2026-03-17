@@ -127,7 +127,7 @@ CREATE UNIQUE INDEX idx_sites_user_url ON sites(user_id, url);
 |------|------|---------|------|
 | `id` | `BIGSERIAL` | PK | 작업 고유 ID |
 | `site_id` | `BIGINT` | FK → sites(id), NOT NULL | 대상 사이트 |
-| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED) |
+| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED) - Java enum `CrawlJobStatus`로 매핑 (`@Enumerated(STRING)`) |
 | `trigger_type` | `VARCHAR(20)` | NOT NULL | 트리거 유형 (MANUAL, SCHEDULED) |
 | `max_pages` | `INTEGER` | NOT NULL, DEFAULT 100 | 최대 크롤링 페이지 수 |
 | `max_depth` | `INTEGER` | NOT NULL, DEFAULT 3 | 최대 크롤링 깊이 |
@@ -354,7 +354,7 @@ CREATE INDEX idx_keyword_rankings_rank ON keyword_rankings(rank) WHERE rank IS N
 | `generated_meta_description` | `VARCHAR(500)` | NULL | AI 생성 메타 디스크립션 |
 | `ai_provider` | `VARCHAR(20)` | NULL | 사용된 AI 제공자 (OPENAI, CLAUDE) |
 | `ai_model` | `VARCHAR(50)` | NULL | 사용된 AI 모델 |
-| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 (PENDING, PROCESSING, COMPLETED, FAILED) |
+| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 (PENDING, ANALYZING, PROCESSING, COMPLETED, FAILED) - Java enum `AnalysisStatus`로 매핑 (`@Enumerated(STRING)`) |
 | `error_message` | `TEXT` | NULL | 실패 시 에러 메시지 |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | 요청일 |
 | `completed_at` | `TIMESTAMPTZ` | NULL | 완료일 |
@@ -408,7 +408,7 @@ CREATE INDEX idx_content_analyses_created_at ON content_analyses(created_at DESC
 | `summary` | `JSONB` | NULL | 요약 데이터 |
 | `file_path` | `VARCHAR(1024)` | NULL | MinIO 내 파일 경로 |
 | `file_size` | `BIGINT` | NULL | 파일 크기 (bytes) |
-| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 (PENDING, GENERATING, COMPLETED, FAILED) |
+| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 (PENDING, GENERATING, COMPLETED, FAILED) - Java enum `ReportStatus`로 매핑 (`@Enumerated(STRING)`) |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | 생성일 |
 
 `summary` JSONB 구조 예시:
@@ -475,6 +475,74 @@ CREATE INDEX idx_notifications_created_at ON notifications(created_at DESC);
 CREATE INDEX idx_notifications_reference ON notifications(reference_type, reference_id);
 ```
 
+### 2.11 public_analyses (공개 SEO 분석)
+
+> V6 마이그레이션(`V6__add_public_analyses.sql`)으로 추가된 테이블. 인증 없이 사용 가능한 공개 SEO 분석 결과를 저장한다.
+
+| 컬럼 | 타입 | 제약조건 | 설명 |
+|------|------|---------|------|
+| `id` | `BIGSERIAL` | PK | 분석 고유 ID |
+| `url` | `VARCHAR(2048)` | NOT NULL | 분석 대상 URL |
+| `domain` | `VARCHAR(500)` | NOT NULL | 도메인 (추출값) |
+| `seo_score` | `NUMERIC(5,2)` | NULL | 종합 SEO 점수 (0~100) |
+| `title_score` | `NUMERIC(5,2)` | NULL | 타이틀 태그 점수 |
+| `meta_description_score` | `NUMERIC(5,2)` | NULL | 메타 디스크립션 점수 |
+| `heading_score` | `NUMERIC(5,2)` | NULL | 헤딩 구조 점수 |
+| `image_score` | `NUMERIC(5,2)` | NULL | 이미지 최적화 점수 |
+| `link_score` | `NUMERIC(5,2)` | NULL | 링크 상태 점수 |
+| `performance_score` | `NUMERIC(5,2)` | NULL | 성능 점수 |
+| `title` | `VARCHAR(1000)` | NULL | 페이지 타이틀 |
+| `meta_description` | `TEXT` | NULL | 메타 디스크립션 |
+| `canonical_url` | `VARCHAR(2048)` | NULL | canonical URL |
+| `response_time_ms` | `INTEGER` | NULL | 응답 시간 (ms) |
+| `content_length` | `INTEGER` | NULL | 콘텐츠 길이 (bytes) |
+| `total_images` | `INTEGER` | NOT NULL, DEFAULT 0 | 전체 이미지 수 |
+| `images_without_alt` | `INTEGER` | NOT NULL, DEFAULT 0 | alt 없는 이미지 수 |
+| `internal_links` | `INTEGER` | NOT NULL, DEFAULT 0 | 내부 링크 수 |
+| `external_links` | `INTEGER` | NOT NULL, DEFAULT 0 | 외부 링크 수 |
+| `broken_links` | `INTEGER` | NOT NULL, DEFAULT 0 | 깨진 링크 수 |
+| `total_headings` | `INTEGER` | NOT NULL, DEFAULT 0 | 전체 헤딩 수 |
+| `has_og_tags` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | Open Graph 태그 유무 |
+| `has_twitter_cards` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | Twitter Card 유무 |
+| `has_viewport` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | viewport 메타태그 유무 |
+| `has_favicon` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | favicon 유무 |
+| `has_robots_txt` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | robots.txt 유무 |
+| `has_sitemap` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | sitemap.xml 유무 |
+| `has_https` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | HTTPS 사용 여부 |
+| `heading_structure` | `JSONB` | NULL | 헤딩 구조 상세 |
+| `issues` | `JSONB` | NULL | 발견된 이슈 목록 |
+| `link_list` | `JSONB` | NULL | 링크 목록 |
+| `meta_tags` | `JSONB` | NULL | 메타 태그 정보 |
+| `status` | `VARCHAR(20)` | NOT NULL, DEFAULT 'PENDING' | 상태 - Java enum `AnalysisStatus`로 매핑 (`@Enumerated(STRING)`) |
+| `error_message` | `VARCHAR(2000)` | NULL | 실패 시 에러 메시지 |
+| `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT NOW() | 생성일 |
+| `updated_at` | `TIMESTAMP` | NOT NULL, DEFAULT NOW() | 수정일 |
+
+**인덱스:**
+```sql
+CREATE INDEX idx_public_analyses_domain ON public_analyses(domain);
+CREATE INDEX idx_public_analyses_seo_score ON public_analyses(seo_score DESC);
+CREATE INDEX idx_public_analyses_created_at ON public_analyses(created_at DESC);
+CREATE INDEX idx_public_analyses_status ON public_analyses(status);
+```
+
+**참고**: `public_analyses`는 `users`나 `sites` 테이블과 FK 관계가 없으며, 인증 없는 공개 분석 결과를 독립적으로 저장한다.
+
+### Status 필드 Enum 매핑 참고
+
+모든 status 관련 컬럼은 DB에 `VARCHAR`로 저장되며, 애플리케이션 레벨에서 Java enum과 `@Enumerated(EnumType.STRING)` 어노테이션을 통해 매핑한다. DB ENUM 타입을 사용하지 않는 이유는 다음과 같다:
+
+- DB ENUM 변경 시 `ALTER TYPE`이 필요하여 마이그레이션이 복잡해짐
+- JPA와의 매핑에서 타입 불일치 문제 발생 가능
+- VARCHAR + 애플리케이션 검증 방식이 유연성과 호환성이 높음
+
+| 테이블 | Java Enum | 값 |
+|--------|-----------|-----|
+| `crawl_jobs` | `CrawlJobStatus` | PENDING, RUNNING, COMPLETED, FAILED, CANCELLED |
+| `content_analyses` | `AnalysisStatus` | PENDING, ANALYZING, PROCESSING, COMPLETED, FAILED |
+| `public_analyses` | `AnalysisStatus` | PENDING, ANALYZING, PROCESSING, COMPLETED, FAILED |
+| `reports` | `ReportStatus` | PENDING, GENERATING, COMPLETED, FAILED |
+
 ## 3. 테이블 관계 요약
 
 | 관계 | 유형 | 설명 |
@@ -489,6 +557,7 @@ CREATE INDEX idx_notifications_reference ON notifications(reference_type, refere
 | users → content_analyses | 1:N | 사용자당 여러 콘텐츠 분석 |
 | sites → reports | 1:N | 사이트당 여러 리포트 |
 | users → notifications | 1:N | 사용자당 여러 알림 |
+| (독립) public_analyses | - | 인증 없는 공개 분석 결과 (FK 관계 없음) |
 
 ## 4. DDL (전체 스키마 생성 스크립트)
 
@@ -496,8 +565,14 @@ CREATE INDEX idx_notifications_reference ON notifications(reference_type, refere
 -- TimescaleDB 확장 활성화
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
--- ENUM 타입은 사용하지 않고 VARCHAR + CHECK 제약조건 또는 애플리케이션 레벨 검증을 사용한다.
--- 이유: ENUM 변경 시 ALTER TYPE이 필요하고, JPA 매핑이 복잡해짐
+-- ENUM 타입은 사용하지 않고 VARCHAR + 애플리케이션 레벨 Java enum 매핑을 사용한다.
+-- DB에는 VARCHAR로 저장하되, JPA 엔티티에서 @Enumerated(EnumType.STRING)으로 매핑한다.
+-- 이유: DB ENUM 변경 시 ALTER TYPE이 필요하고, JPA 매핑이 복잡해짐
+--
+-- 애플리케이션 레벨 Java enum 목록:
+--   CrawlJobStatus  : PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+--   AnalysisStatus   : PENDING, ANALYZING, PROCESSING, COMPLETED, FAILED
+--   ReportStatus     : PENDING, GENERATING, COMPLETED, FAILED
 
 -- ============================================
 -- users
@@ -770,6 +845,53 @@ CREATE INDEX idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX idx_notifications_user_read ON notifications(user_id, is_read);
 CREATE INDEX idx_notifications_created_at ON notifications(created_at DESC);
 CREATE INDEX idx_notifications_reference ON notifications(reference_type, reference_id);
+
+-- ============================================
+-- public_analyses (V6 마이그레이션)
+-- ============================================
+CREATE TABLE public_analyses (
+    id BIGSERIAL PRIMARY KEY,
+    url VARCHAR(2048) NOT NULL,
+    domain VARCHAR(500) NOT NULL,
+    seo_score NUMERIC(5, 2),
+    title_score NUMERIC(5, 2),
+    meta_description_score NUMERIC(5, 2),
+    heading_score NUMERIC(5, 2),
+    image_score NUMERIC(5, 2),
+    link_score NUMERIC(5, 2),
+    performance_score NUMERIC(5, 2),
+    title VARCHAR(1000),
+    meta_description TEXT,
+    canonical_url VARCHAR(2048),
+    response_time_ms INTEGER,
+    content_length INTEGER,
+    total_images INTEGER NOT NULL DEFAULT 0,
+    images_without_alt INTEGER NOT NULL DEFAULT 0,
+    internal_links INTEGER NOT NULL DEFAULT 0,
+    external_links INTEGER NOT NULL DEFAULT 0,
+    broken_links INTEGER NOT NULL DEFAULT 0,
+    total_headings INTEGER NOT NULL DEFAULT 0,
+    has_og_tags BOOLEAN NOT NULL DEFAULT FALSE,
+    has_twitter_cards BOOLEAN NOT NULL DEFAULT FALSE,
+    has_viewport BOOLEAN NOT NULL DEFAULT FALSE,
+    has_favicon BOOLEAN NOT NULL DEFAULT FALSE,
+    has_robots_txt BOOLEAN NOT NULL DEFAULT FALSE,
+    has_sitemap BOOLEAN NOT NULL DEFAULT FALSE,
+    has_https BOOLEAN NOT NULL DEFAULT FALSE,
+    heading_structure JSONB,
+    issues JSONB,
+    link_list JSONB,
+    meta_tags JSONB,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    error_message VARCHAR(2000),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_public_analyses_domain ON public_analyses(domain);
+CREATE INDEX idx_public_analyses_seo_score ON public_analyses(seo_score DESC);
+CREATE INDEX idx_public_analyses_created_at ON public_analyses(created_at DESC);
+CREATE INDEX idx_public_analyses_status ON public_analyses(status);
 ```
 
 ## 5. 데이터 보존 및 관리 정책
@@ -782,3 +904,4 @@ CREATE INDEX idx_notifications_reference ON notifications(reference_type, refere
 | content_analyses | 영구 보존 | 사용자 데이터 |
 | reports | 영구 보존 | MinIO 파일은 1년 후 아카이브 |
 | notifications | 90일 | 스케줄러로 주기적 삭제 |
+| public_analyses | 90일 | 비인증 공개 분석 결과, 스케줄러로 주기적 삭제 |
