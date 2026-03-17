@@ -24,7 +24,7 @@ public record PublicAnalysisListResponse(
                 entity.getSeoScore(),
                 entity.getTitle(),
                 entity.getResponseTimeMs(),
-                entity.getStatus(),
+                entity.getStatus().name(),
                 entity.getCreatedAt()
         );
     }

@@ -12,6 +12,7 @@ import com.seodashboard.common.domain.CrawlJob;
 import com.seodashboard.common.domain.CrawlResult;
 import com.seodashboard.common.domain.PageAnalysis;
 import com.seodashboard.common.domain.Site;
+import com.seodashboard.common.domain.enums.CrawlJobStatus;
 import com.seodashboard.common.dto.PageResponse;
 import com.seodashboard.common.exception.BusinessException;
 import com.seodashboard.common.exception.ErrorCode;
@@ -46,7 +47,7 @@ public class CrawlService {
         Site site = siteRepository.findByIdAndUserId(siteId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SITE_NOT_FOUND));
 
-        if (crawlJobRepository.existsBySiteIdAndStatus(siteId, "RUNNING")) {
+        if (crawlJobRepository.existsBySiteIdAndStatus(siteId, CrawlJobStatus.RUNNING)) {
             throw new BusinessException(ErrorCode.CRAWL_ALREADY_RUNNING);
         }
 

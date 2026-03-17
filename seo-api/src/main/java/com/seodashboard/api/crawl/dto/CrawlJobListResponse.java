@@ -19,7 +19,7 @@ public record CrawlJobListResponse(
     public static CrawlJobListResponse from(CrawlJob crawlJob) {
         return new CrawlJobListResponse(
                 crawlJob.getId(),
-                crawlJob.getStatus(),
+                crawlJob.getStatus().name(),
                 crawlJob.getTriggerType(),
                 crawlJob.getMaxPages(),
                 crawlJob.getTotalPages(),

@@ -29,7 +29,7 @@ public record ReportResponse(
                 report.getPeriodStart(),
                 report.getPeriodEnd(),
                 report.getSummary(),
-                report.getStatus(),
+                report.getStatus().name(),
                 report.getCompletedAt(),
                 report.getCreatedAt()
         );

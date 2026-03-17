@@ -78,7 +78,7 @@ public record PublicAnalysisResponse(
                 issues,
                 linkList,
                 metaTags,
-                entity.getStatus(),
+                entity.getStatus().name(),
                 entity.getErrorMessage(),
                 entity.getCreatedAt()
         );

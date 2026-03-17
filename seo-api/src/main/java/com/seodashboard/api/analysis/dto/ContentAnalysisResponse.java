@@ -46,7 +46,7 @@ public record ContentAnalysisResponse(
                 analysis.getGeneratedMetaDescription(),
                 analysis.getAiProvider(),
                 analysis.getAiModel(),
-                analysis.getStatus(),
+                analysis.getStatus().name(),
                 analysis.getErrorMessage(),
                 analysis.getCompletedAt(),
                 analysis.getCreatedAt()

@@ -27,7 +27,7 @@ public record ContentAnalysisListResponse(
                 analysis.getSeoScore(),
                 analysis.getReadabilityScore(),
                 analysis.getAiProvider(),
-                analysis.getStatus(),
+                analysis.getStatus().name(),
                 analysis.getCompletedAt(),
                 analysis.getCreatedAt()
         );

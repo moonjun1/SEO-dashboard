@@ -1,7 +1,10 @@
 package com.seodashboard.common.domain;
 
+import com.seodashboard.common.domain.enums.AnalysisStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -69,8 +72,9 @@ public class ContentAnalysis extends BaseEntity {
     @Column(name = "ai_model", length = 50)
     private String aiModel;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private AnalysisStatus status;
 
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
@@ -85,11 +89,11 @@ public class ContentAnalysis extends BaseEntity {
         this.title = title;
         this.content = content;
         this.targetKeywords = targetKeywords;
-        this.status = "PENDING";
+        this.status = AnalysisStatus.PENDING;
     }
 
     public void markProcessing() {
-        this.status = "PROCESSING";
+        this.status = AnalysisStatus.PROCESSING;
     }
 
     public void markCompleted(BigDecimal seoScore, BigDecimal readabilityScore,
@@ -97,7 +101,7 @@ public class ContentAnalysis extends BaseEntity {
                               String suggestions, String generatedMetaTitle,
                               String generatedMetaDescription,
                               String aiProvider, String aiModel) {
-        this.status = "COMPLETED";
+        this.status = AnalysisStatus.COMPLETED;
         this.seoScore = seoScore;
         this.readabilityScore = readabilityScore;
         this.keywordDensity = keywordDensity;
@@ -111,12 +115,12 @@ public class ContentAnalysis extends BaseEntity {
     }
 
     public void markFailed(String errorMessage) {
-        this.status = "FAILED";
+        this.status = AnalysisStatus.FAILED;
         this.errorMessage = errorMessage;
         this.completedAt = LocalDateTime.now();
     }
 
     public boolean isCompleted() {
-        return "COMPLETED".equals(this.status);
+        return this.status == AnalysisStatus.COMPLETED;
     }
 }

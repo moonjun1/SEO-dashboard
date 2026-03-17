@@ -1,7 +1,10 @@
 package com.seodashboard.common.domain;
 
+import com.seodashboard.common.domain.enums.AnalysisStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -119,103 +122,57 @@ public class PublicAnalysis extends BaseEntity {
     private String metaTags;
 
     // Status
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private AnalysisStatus status;
 
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
 
     @Builder
-    public PublicAnalysis(String url, String domain, BigDecimal seoScore, BigDecimal titleScore,
-                          BigDecimal metaDescriptionScore, BigDecimal headingScore, BigDecimal imageScore,
-                          BigDecimal linkScore, BigDecimal performanceScore, String title,
-                          String metaDescription, String canonicalUrl, Integer responseTimeMs,
-                          Integer contentLength, int totalImages, int imagesWithoutAlt,
-                          int internalLinks, int externalLinks, int brokenLinks, int totalHeadings,
-                          boolean hasOgTags, boolean hasTwitterCards, boolean hasViewport,
-                          boolean hasFavicon, boolean hasRobotsTxt, boolean hasSitemap, boolean hasHttps,
-                          String headingStructure, String issues, String linkList, String metaTags,
-                          String status, String errorMessage) {
+    public PublicAnalysis(String url, String domain, AnalysisStatus status, String errorMessage) {
         this.url = url;
         this.domain = domain;
-        this.seoScore = seoScore;
-        this.titleScore = titleScore;
-        this.metaDescriptionScore = metaDescriptionScore;
-        this.headingScore = headingScore;
-        this.imageScore = imageScore;
-        this.linkScore = linkScore;
-        this.performanceScore = performanceScore;
-        this.title = title;
-        this.metaDescription = metaDescription;
-        this.canonicalUrl = canonicalUrl;
-        this.responseTimeMs = responseTimeMs;
-        this.contentLength = contentLength;
-        this.totalImages = totalImages;
-        this.imagesWithoutAlt = imagesWithoutAlt;
-        this.internalLinks = internalLinks;
-        this.externalLinks = externalLinks;
-        this.brokenLinks = brokenLinks;
-        this.totalHeadings = totalHeadings;
-        this.hasOgTags = hasOgTags;
-        this.hasTwitterCards = hasTwitterCards;
-        this.hasViewport = hasViewport;
-        this.hasFavicon = hasFavicon;
-        this.hasRobotsTxt = hasRobotsTxt;
-        this.hasSitemap = hasSitemap;
-        this.hasHttps = hasHttps;
-        this.headingStructure = headingStructure;
-        this.issues = issues;
-        this.linkList = linkList;
-        this.metaTags = metaTags;
         this.status = status;
         this.errorMessage = errorMessage;
     }
 
-    public void markCompleted(BigDecimal seoScore, BigDecimal titleScore, BigDecimal metaDescriptionScore,
-                               BigDecimal headingScore, BigDecimal imageScore, BigDecimal linkScore,
-                               BigDecimal performanceScore, String title, String metaDescription,
-                               String canonicalUrl, Integer responseTimeMs, Integer contentLength,
-                               int totalImages, int imagesWithoutAlt, int internalLinks,
-                               int externalLinks, int brokenLinks, int totalHeadings,
-                               boolean hasOgTags, boolean hasTwitterCards, boolean hasViewport,
-                               boolean hasFavicon, boolean hasRobotsTxt, boolean hasSitemap,
-                               boolean hasHttps, String headingStructure, String issues,
-                               String linkList, String metaTags) {
-        this.seoScore = seoScore;
-        this.titleScore = titleScore;
-        this.metaDescriptionScore = metaDescriptionScore;
-        this.headingScore = headingScore;
-        this.imageScore = imageScore;
-        this.linkScore = linkScore;
-        this.performanceScore = performanceScore;
-        this.title = title;
-        this.metaDescription = metaDescription;
-        this.canonicalUrl = canonicalUrl;
-        this.responseTimeMs = responseTimeMs;
-        this.contentLength = contentLength;
-        this.totalImages = totalImages;
-        this.imagesWithoutAlt = imagesWithoutAlt;
-        this.internalLinks = internalLinks;
-        this.externalLinks = externalLinks;
-        this.brokenLinks = brokenLinks;
-        this.totalHeadings = totalHeadings;
-        this.hasOgTags = hasOgTags;
-        this.hasTwitterCards = hasTwitterCards;
-        this.hasViewport = hasViewport;
-        this.hasFavicon = hasFavicon;
-        this.hasRobotsTxt = hasRobotsTxt;
-        this.hasSitemap = hasSitemap;
-        this.hasHttps = hasHttps;
-        this.headingStructure = headingStructure;
-        this.issues = issues;
-        this.linkList = linkList;
-        this.metaTags = metaTags;
-        this.status = "COMPLETED";
+    public void markCompleted(PublicAnalysisResult result) {
+        this.seoScore = result.seoScore();
+        this.titleScore = result.titleScore();
+        this.metaDescriptionScore = result.metaDescriptionScore();
+        this.headingScore = result.headingScore();
+        this.imageScore = result.imageScore();
+        this.linkScore = result.linkScore();
+        this.performanceScore = result.performanceScore();
+        this.title = result.title();
+        this.metaDescription = result.metaDescription();
+        this.canonicalUrl = result.canonicalUrl();
+        this.responseTimeMs = result.responseTimeMs();
+        this.contentLength = result.contentLength();
+        this.totalImages = result.totalImages();
+        this.imagesWithoutAlt = result.imagesWithoutAlt();
+        this.internalLinks = result.internalLinks();
+        this.externalLinks = result.externalLinks();
+        this.brokenLinks = result.brokenLinks();
+        this.totalHeadings = result.totalHeadings();
+        this.hasOgTags = result.hasOgTags();
+        this.hasTwitterCards = result.hasTwitterCards();
+        this.hasViewport = result.hasViewport();
+        this.hasFavicon = result.hasFavicon();
+        this.hasRobotsTxt = result.hasRobotsTxt();
+        this.hasSitemap = result.hasSitemap();
+        this.hasHttps = result.hasHttps();
+        this.headingStructure = result.headingStructure();
+        this.issues = result.issues();
+        this.linkList = result.linkList();
+        this.metaTags = result.metaTags();
+        this.status = AnalysisStatus.COMPLETED;
         this.errorMessage = null;
     }
 
     public void markFailed(String errorMessage) {
-        this.status = "FAILED";
+        this.status = AnalysisStatus.FAILED;
         this.errorMessage = errorMessage;
     }
 }

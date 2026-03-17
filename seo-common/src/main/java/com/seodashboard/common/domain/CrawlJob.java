@@ -1,7 +1,10 @@
 package com.seodashboard.common.domain;
 
+import com.seodashboard.common.domain.enums.CrawlJobStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -23,8 +26,9 @@ public class CrawlJob extends BaseEntity {
     @JoinColumn(name = "site_id", nullable = false)
     private Site site;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private CrawlJobStatus status;
 
     @Column(name = "trigger_type", nullable = false, length = 20)
     private String triggerType;
@@ -53,7 +57,7 @@ public class CrawlJob extends BaseEntity {
     @Builder
     public CrawlJob(Site site, String triggerType, int maxPages, int maxDepth) {
         this.site = site;
-        this.status = "PENDING";
+        this.status = CrawlJobStatus.PENDING;
         this.triggerType = triggerType;
         this.maxPages = maxPages;
         this.maxDepth = maxDepth;
@@ -61,33 +65,33 @@ public class CrawlJob extends BaseEntity {
     }
 
     public void markRunning() {
-        this.status = "RUNNING";
+        this.status = CrawlJobStatus.RUNNING;
         this.startedAt = LocalDateTime.now();
     }
 
     public void markCompleted(int totalPages, int errorCount) {
-        this.status = "COMPLETED";
+        this.status = CrawlJobStatus.COMPLETED;
         this.totalPages = totalPages;
         this.errorCount = errorCount;
         this.completedAt = LocalDateTime.now();
     }
 
     public void markFailed(String errorMessage) {
-        this.status = "FAILED";
+        this.status = CrawlJobStatus.FAILED;
         this.errorMessage = errorMessage;
         this.completedAt = LocalDateTime.now();
     }
 
     public void markCancelled() {
-        this.status = "CANCELLED";
+        this.status = CrawlJobStatus.CANCELLED;
         this.completedAt = LocalDateTime.now();
     }
 
     public boolean isRunning() {
-        return "RUNNING".equals(this.status);
+        return this.status == CrawlJobStatus.RUNNING;
     }
 
     public boolean isCancellable() {
-        return "PENDING".equals(this.status) || "RUNNING".equals(this.status);
+        return this.status == CrawlJobStatus.PENDING || this.status == CrawlJobStatus.RUNNING;
     }
 }

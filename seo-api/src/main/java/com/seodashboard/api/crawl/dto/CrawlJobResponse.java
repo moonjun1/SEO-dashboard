@@ -23,7 +23,7 @@ public record CrawlJobResponse(
         return new CrawlJobResponse(
                 crawlJob.getId(),
                 crawlJob.getSite().getId(),
-                crawlJob.getStatus(),
+                crawlJob.getStatus().name(),
                 crawlJob.getTriggerType(),
                 crawlJob.getMaxPages(),
                 crawlJob.getMaxDepth(),

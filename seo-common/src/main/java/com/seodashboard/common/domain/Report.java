@@ -1,7 +1,10 @@
 package com.seodashboard.common.domain;
 
+import com.seodashboard.common.domain.enums.ReportStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -46,8 +49,9 @@ public class Report extends BaseEntity {
     @Column(columnDefinition = "jsonb")
     private String summary;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private ReportStatus status;
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
@@ -61,21 +65,21 @@ public class Report extends BaseEntity {
         this.title = title;
         this.periodStart = periodStart;
         this.periodEnd = periodEnd;
-        this.status = "PENDING";
+        this.status = ReportStatus.PENDING;
     }
 
     public void markGenerating() {
-        this.status = "GENERATING";
+        this.status = ReportStatus.GENERATING;
     }
 
     public void markCompleted(String summary) {
-        this.status = "COMPLETED";
+        this.status = ReportStatus.COMPLETED;
         this.summary = summary;
         this.completedAt = LocalDateTime.now();
     }
 
     public void markFailed() {
-        this.status = "FAILED";
+        this.status = ReportStatus.FAILED;
         this.completedAt = LocalDateTime.now();
     }
 }
