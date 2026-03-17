@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 public class AuthService {
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh_token:";
+    private static final String USED_REFRESH_TOKEN_PREFIX = "used_refresh_token:";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -76,6 +77,16 @@ public class AuthService {
         }
 
         Long userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
+
+        // Replay attack detection: if this token was already used and rotated out,
+        // someone is reusing a stolen token. Invalidate all tokens for the user.
+        String usedTokenKey = USED_REFRESH_TOKEN_PREFIX + refreshToken;
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(usedTokenKey))) {
+            log.warn("Refresh token replay attack detected for userId={}. Invalidating all tokens.", userId);
+            redisTemplate.delete(REFRESH_TOKEN_PREFIX + userId);
+            throw new BusinessException(ErrorCode.INVALID_TOKEN, "Refresh token reuse detected. All sessions invalidated.");
+        }
+
         String storedToken = redisTemplate.opsForValue().get(REFRESH_TOKEN_PREFIX + userId);
 
         if (storedToken == null || !storedToken.equals(refreshToken)) {
@@ -85,6 +96,20 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "User not found"));
 
+        // Mark the old refresh token as used before generating new tokens.
+        // Keep it for the duration of the old token's remaining TTL so replay can be detected.
+        Long remainingTtl = redisTemplate.getExpire(REFRESH_TOKEN_PREFIX + userId, TimeUnit.MILLISECONDS);
+        long ttlMs = (remainingTtl != null && remainingTtl > 0)
+                ? remainingTtl
+                : jwtTokenProvider.getRefreshTokenExpiration();
+
+        // Delete the old refresh token
+        redisTemplate.delete(REFRESH_TOKEN_PREFIX + userId);
+
+        // Store old token in the used-token set for replay detection
+        redisTemplate.opsForValue().set(usedTokenKey, userId.toString(), ttlMs, TimeUnit.MILLISECONDS);
+
+        // Generate and store new token pair
         return generateTokenResponse(user);
     }
 
