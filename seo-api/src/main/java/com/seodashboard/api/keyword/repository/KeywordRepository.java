@@ -26,5 +26,7 @@ public interface KeywordRepository extends JpaRepository<Keyword, Long> {
 
     List<Keyword> findBySiteIdAndIsActiveTrue(Long siteId);
 
+    List<Keyword> findBySiteIdInAndIsActiveTrue(List<Long> siteIds);
+
     Optional<Keyword> findByIdAndSiteId(Long id, Long siteId);
 }

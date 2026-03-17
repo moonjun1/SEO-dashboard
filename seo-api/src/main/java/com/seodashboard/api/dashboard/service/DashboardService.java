@@ -33,6 +33,9 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -64,17 +67,32 @@ public class DashboardService {
 
         List<DashboardResponse.SiteSummary> siteSummaries = new ArrayList<>();
 
+        // Batch-load all keywords for all sites at once
+        List<Long> siteIds = sites.stream().map(Site::getId).toList();
+        Map<Long, List<Keyword>> keywordsBySiteId = siteIds.isEmpty()
+                ? Map.of()
+                : keywordRepository.findBySiteIdInAndIsActiveTrue(siteIds).stream()
+                    .collect(Collectors.groupingBy(kw -> kw.getSite().getId()));
+
+        // Batch-load latest rankings for all keywords in one query
+        List<Long> allKeywordIds = keywordsBySiteId.values().stream()
+                .flatMap(List::stream)
+                .map(Keyword::getId)
+                .toList();
+        Map<Long, KeywordRanking> latestRankingByKeywordId = allKeywordIds.isEmpty()
+                ? Map.of()
+                : keywordRankingRepository.findLatestByKeywordIdIn(allKeywordIds).stream()
+                    .collect(Collectors.toMap(kr -> kr.getKeyword().getId(), Function.identity()));
+
         for (Site site : sites) {
-            List<Keyword> siteKeywords = keywordRepository.findBySiteIdAndIsActiveTrue(site.getId());
+            List<Keyword> siteKeywords = keywordsBySiteId.getOrDefault(site.getId(), List.of());
             long siteKeywordCount = siteKeywords.size();
             totalKeywords += siteKeywordCount;
 
-            // Count keywords in top 10
+            // Count keywords in top 10 using pre-loaded rankings
             long siteTop10 = 0;
             for (Keyword kw : siteKeywords) {
-                KeywordRanking latest = keywordRankingRepository
-                        .findTopByKeywordIdOrderByRecordedAtDesc(kw.getId())
-                        .orElse(null);
+                KeywordRanking latest = latestRankingByKeywordId.get(kw.getId());
                 if (latest != null && latest.getRank() != null && latest.getRank() <= 10) {
                     siteTop10++;
                 }
@@ -154,6 +172,14 @@ public class DashboardService {
             Page<CrawlResult> results = crawlResultRepository.findByCrawlJobIdOrderBySeoScoreAsc(
                     latestJob.getId(), PageRequest.of(0, 1000));
 
+            // Batch-load all page analyses for these crawl results
+            List<Long> crawlResultIds = results.getContent().stream()
+                    .map(CrawlResult::getId).toList();
+            Map<Long, PageAnalysis> analysisByCrawlResultId = crawlResultIds.isEmpty()
+                    ? Map.of()
+                    : pageAnalysisRepository.findByCrawlResultIdIn(crawlResultIds).stream()
+                        .collect(Collectors.toMap(pa -> pa.getCrawlResult().getId(), Function.identity()));
+
             long responseTimeSum = 0;
             int responseTimeCount = 0;
 
@@ -163,7 +189,7 @@ public class DashboardService {
                     responseTimeCount++;
                 }
 
-                PageAnalysis pa = pageAnalysisRepository.findByCrawlResultId(cr.getId()).orElse(null);
+                PageAnalysis pa = analysisByCrawlResultId.get(cr.getId());
                 if (pa != null) {
                     if (pa.getSeoScore() != null && pa.getSeoScore().compareTo(BigDecimal.valueOf(70)) >= 0) {
                         healthyPages++;
@@ -190,13 +216,19 @@ public class DashboardService {
 
         // Top keywords
         List<Keyword> activeKeywords = keywordRepository.findBySiteIdAndIsActiveTrue(siteId);
+
+        // Batch-load latest rankings for all active keywords
+        List<Long> activeKeywordIds = activeKeywords.stream().map(Keyword::getId).toList();
+        Map<Long, KeywordRanking> siteLatestRankings = activeKeywordIds.isEmpty()
+                ? Map.of()
+                : keywordRankingRepository.findLatestByKeywordIdIn(activeKeywordIds).stream()
+                    .collect(Collectors.toMap(kr -> kr.getKeyword().getId(), Function.identity()));
+
         List<SiteDashboardResponse.TopKeyword> topKeywords = new ArrayList<>();
         int keywordLimit = Math.min(activeKeywords.size(), 5);
         for (int i = 0; i < keywordLimit; i++) {
             Keyword kw = activeKeywords.get(i);
-            KeywordRanking latest = keywordRankingRepository
-                    .findTopByKeywordIdOrderByRecordedAtDesc(kw.getId())
-                    .orElse(null);
+            KeywordRanking latest = siteLatestRankings.get(kw.getId());
 
             topKeywords.add(new SiteDashboardResponse.TopKeyword(
                     kw.getId(),
@@ -227,6 +259,13 @@ public class DashboardService {
 
         List<Keyword> activeKeywords = keywordRepository.findBySiteIdAndIsActiveTrue(siteId);
 
+        // Batch-load latest rankings for all active keywords
+        List<Long> statsKeywordIds = activeKeywords.stream().map(Keyword::getId).toList();
+        Map<Long, KeywordRanking> statsLatestRankings = statsKeywordIds.isEmpty()
+                ? Map.of()
+                : keywordRankingRepository.findLatestByKeywordIdIn(statsKeywordIds).stream()
+                    .collect(Collectors.toMap(kr -> kr.getKeyword().getId(), Function.identity()));
+
         long top3 = 0;
         long top10 = 0;
         long top30 = 0;
@@ -234,9 +273,7 @@ public class DashboardService {
         long notRanked = 0;
 
         for (Keyword kw : activeKeywords) {
-            KeywordRanking latest = keywordRankingRepository
-                    .findTopByKeywordIdOrderByRecordedAtDesc(kw.getId())
-                    .orElse(null);
+            KeywordRanking latest = statsLatestRankings.get(kw.getId());
 
             if (latest == null || latest.getRank() == null) {
                 notRanked++;

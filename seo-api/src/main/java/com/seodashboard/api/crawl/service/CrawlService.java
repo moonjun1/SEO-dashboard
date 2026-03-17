@@ -15,6 +15,10 @@ import com.seodashboard.common.domain.Site;
 import com.seodashboard.common.dto.PageResponse;
 import com.seodashboard.common.exception.BusinessException;
 import com.seodashboard.common.exception.ErrorCode;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import com.seodashboard.api.crawl.event.CrawlStartedEvent;
 import com.seodashboard.crawler.service.CrawlExecutionService;
 import lombok.RequiredArgsConstructor;
@@ -115,14 +119,20 @@ public class CrawlService {
                 .filter(job -> job.getSite().getId().equals(siteId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.CRAWL_JOB_NOT_FOUND));
 
-        Page<CrawlResultResponse> page = crawlResultRepository
-                .findByCrawlJobIdOrderBySeoScoreAsc(jobId, pageable)
-                .map(crawlResult -> {
-                    PageAnalysis analysis = pageAnalysisRepository
-                            .findByCrawlResultId(crawlResult.getId())
-                            .orElse(null);
-                    return CrawlResultResponse.from(crawlResult, analysis);
-                });
+        Page<CrawlResult> crawlResultPage = crawlResultRepository
+                .findByCrawlJobIdOrderBySeoScoreAsc(jobId, pageable);
+
+        // Batch-load all page analyses for this page of crawl results
+        List<Long> crawlResultIds = crawlResultPage.getContent().stream()
+                .map(CrawlResult::getId).toList();
+        Map<Long, PageAnalysis> analysisByCrawlResultId = crawlResultIds.isEmpty()
+                ? Map.of()
+                : pageAnalysisRepository.findByCrawlResultIdIn(crawlResultIds).stream()
+                    .collect(Collectors.toMap(pa -> pa.getCrawlResult().getId(), pa -> pa));
+
+        Page<CrawlResultResponse> page = crawlResultPage
+                .map(crawlResult -> CrawlResultResponse.from(
+                        crawlResult, analysisByCrawlResultId.get(crawlResult.getId())));
 
         return PageResponse.from(page);
     }
