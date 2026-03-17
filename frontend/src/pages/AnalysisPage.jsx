@@ -51,7 +51,7 @@ export default function AnalysisPage() {
     <div className="page">
       <h1 className="page-title">AI Content Analysis</h1>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       <div className="tabs" style={{ marginBottom: 24 }}>
         <button

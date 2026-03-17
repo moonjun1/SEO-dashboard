@@ -67,7 +67,7 @@ export default function PublicResultPage() {
     return (
       <div className="landing-page"><PublicNav />
         <div className="result-page">
-          <div className="alert alert-error">{error || '데이터를 찾을 수 없습니다'}</div>
+          <div className="alert alert-error" role="alert">{error || '데이터를 찾을 수 없습니다'}</div>
           <Link to="/" className="btn btn-primary" style={{ marginTop: 16 }}>돌아가기</Link>
         </div>
       </div>

@@ -75,7 +75,7 @@ export default function KeywordsPage() {
     <div className="page">
       <h1 className="page-title">Keyword Rankings</h1>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       <div className="keyword-actions" style={{ marginBottom: 20 }}>
         <form onSubmit={addKeyword} className="inline-form" style={{ flex: 1 }}>

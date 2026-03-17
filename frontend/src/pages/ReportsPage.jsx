@@ -68,7 +68,7 @@ export default function ReportsPage() {
         </button>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       {showForm && (
         <div className="card" style={{ marginBottom: 24 }}>

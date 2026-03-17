@@ -39,7 +39,7 @@ export default function CrawlResultPage() {
         &larr; Back to Site
       </button>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       {job && (
         <div className="card" style={{ marginBottom: 24 }}>
@@ -78,7 +78,15 @@ export default function CrawlResultPage() {
               const analysis = page.analysis || {};
               return (
                 <tr key={i} className="clickable-row"
-                  onClick={() => setExpandedRow(expandedRow === i ? null : i)}>
+                  tabIndex={0}
+                  role="link"
+                  onClick={() => setExpandedRow(expandedRow === i ? null : i)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setExpandedRow(expandedRow === i ? null : i);
+                    }
+                  }}>
                   <td className="url-cell">{page.url}</td>
                   <td>
                     <span className={`status-code status-code-${Math.floor((page.statusCode || 200) / 100)}xx`}>

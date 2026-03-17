@@ -28,7 +28,7 @@ export default function RankingPage() {
           SEO 점수 순위표
         </h1>
 
-        {error && <div className="alert alert-error">{error}</div>}
+        {error && <div className="alert alert-error" role="alert">{error}</div>}
 
         {loading ? (
           <LoadingSpinner size={48} text="순위 데이터를 불러오는 중..." />

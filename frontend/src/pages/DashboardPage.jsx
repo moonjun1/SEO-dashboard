@@ -63,7 +63,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       {showAddSite && (
         <div className="card" style={{ marginBottom: 24 }}>

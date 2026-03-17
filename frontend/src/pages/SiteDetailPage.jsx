@@ -142,7 +142,7 @@ export default function SiteDetailPage() {
         &larr; Back to Dashboard
       </button>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       <div className="site-header">
         <div>

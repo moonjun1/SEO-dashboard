@@ -4,8 +4,24 @@ import { ScoreGauge } from './ScoreCard';
 export default function SiteCard({ site }) {
   const navigate = useNavigate();
 
+  const handleNavigate = () => navigate(`/sites/${site.id}`);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleNavigate();
+    }
+  };
+
   return (
-    <div className="site-card" onClick={() => navigate(`/sites/${site.id}`)}>
+    <div
+      className="site-card"
+      role="link"
+      tabIndex={0}
+      onClick={handleNavigate}
+      onKeyDown={handleKeyDown}
+      aria-label={`${site.name} - ${site.url}`}
+    >
       <div className="site-card-header">
         <div>
           <h3 className="site-card-name">{site.name}</h3>
