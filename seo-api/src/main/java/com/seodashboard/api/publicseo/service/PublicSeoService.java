@@ -6,6 +6,9 @@ import com.seodashboard.api.publicseo.dto.PublicAnalysisListResponse;
 import com.seodashboard.api.publicseo.dto.PublicAnalysisResponse;
 import com.seodashboard.api.publicseo.repository.PublicAnalysisRepository;
 import com.seodashboard.common.domain.PublicAnalysis;
+import com.seodashboard.common.domain.PublicAnalysisResult;
+import com.seodashboard.common.domain.enums.AnalysisStatus;
+import com.seodashboard.common.util.UrlUtils;
 import com.seodashboard.crawler.analyzer.SeoAnalyzer;
 import com.seodashboard.crawler.engine.HtmlParser;
 import com.seodashboard.crawler.engine.PageFetcher;
@@ -45,7 +48,7 @@ public class PublicSeoService {
     @CacheEvict(value = "publicRanking", allEntries = true)
     @Transactional
     public PublicAnalysisResponse analyze(String rawUrl) {
-        String url = normalizeUrl(rawUrl);
+        String url = UrlUtils.normalizeUrlWithScheme(rawUrl);
 
         // SSRF protection: block private IPs, localhost, cloud metadata
         try {
@@ -54,13 +57,13 @@ public class PublicSeoService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid URL: " + e.getMessage());
         }
 
-        String domain = extractDomain(url);
+        String domain = UrlUtils.extractDomain(url);
 
         // Create initial record with ANALYZING status
         PublicAnalysis analysis = PublicAnalysis.builder()
                 .url(url)
                 .domain(domain)
-                .status("ANALYZING")
+                .status(AnalysisStatus.ANALYZING)
                 .build();
         analysis = publicAnalysisRepository.save(analysis);
 
@@ -122,7 +125,7 @@ public class PublicSeoService {
             String headingStructureJson = seoResult.getHeadingStructure();
 
             // 5. Update the entity with results
-            analysis.markCompleted(
+            PublicAnalysisResult result = new PublicAnalysisResult(
                     seoResult.getSeoScore(),
                     seoResult.getTitleScore(),
                     seoResult.getMetaDescriptionScore(),
@@ -153,6 +156,7 @@ public class PublicSeoService {
                     linkListJson,
                     metaTagsJson
             );
+            analysis.markCompleted(result);
 
             analysis = publicAnalysisRepository.save(analysis);
             log.info("Public SEO analysis completed for URL: {} (score: {})", url, seoResult.getSeoScore());
@@ -187,7 +191,7 @@ public class PublicSeoService {
     @Transactional(readOnly = true)
     public List<PublicAnalysisListResponse> getRanking() {
         return publicAnalysisRepository
-                .findByStatusOrderBySeoScoreDesc("COMPLETED", PageRequest.of(0, 50))
+                .findByStatusOrderBySeoScoreDesc(AnalysisStatus.COMPLETED, PageRequest.of(0, 50))
                 .stream()
                 .map(PublicAnalysisListResponse::from)
                 .toList();
@@ -270,28 +274,6 @@ public class PublicSeoService {
             return result.getStatusCode() == 200;
         } catch (Exception e) {
             return false;
-        }
-    }
-
-    private String normalizeUrl(String rawUrl) {
-        String url = rawUrl.trim();
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://" + url;
-        }
-        // Remove trailing slash
-        if (url.endsWith("/") && url.length() > 1) {
-            url = url.substring(0, url.length() - 1);
-        }
-        return url;
-    }
-
-    private String extractDomain(String url) {
-        try {
-            URI uri = URI.create(url);
-            String host = uri.getHost();
-            return host != null ? host.toLowerCase() : "";
-        } catch (Exception e) {
-            return "";
         }
     }
 
