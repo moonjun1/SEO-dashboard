@@ -505,9 +505,165 @@ dependencies {
 }
 ```
 
-## 7. 확장성 고려사항
+## 7. 보안 계층
 
-### 7.1 수평 확장 포인트
+### 7.1 SSRF 방어 (UrlValidator)
+
+공개 SEO 분석 엔드포인트(`/public/analyze`)에서 사용자가 입력한 URL을 서버 측에서 fetch하기 때문에 SSRF(Server-Side Request Forgery) 공격에 노출될 수 있다. 이를 방어하기 위해 `UrlValidator.validateForFetch()` 메서드가 다음 항목을 차단한다:
+
+- **localhost / 0.0.0.0 / .local** 호스트 차단
+- **사설 IP 대역** 차단 (10.x, 172.16~31.x, 192.168.x)
+- **루프백 주소** (127.0.0.1) 차단
+- **링크-로컬 주소** (169.254.x.x) 차단
+- **클라우드 메타데이터 엔드포인트** (169.254.169.254) 차단 (AWS/GCP/Azure)
+- HTTP/HTTPS 스킴만 허용 (file://, ftp:// 등 차단)
+
+```
+[사용자 URL 입력] → UrlValidator.validateForFetch()
+    ├── 스킴 검증 (HTTP/HTTPS만)
+    ├── 호스트 검증 (localhost, .local 차단)
+    ├── DNS 조회 후 IP 검증
+    │   ├── isLoopbackAddress() → 차단
+    │   ├── isSiteLocalAddress() → 차단 (사설 IP)
+    │   ├── isLinkLocalAddress() → 차단
+    │   └── isCloudMetadataRange() → 차단 (169.254.169.254)
+    └── 통과 시 → PageFetcher.fetch() 실행
+```
+
+### 7.2 Rate Limiting (RateLimitInterceptor)
+
+IP 기반 슬라이딩 윈도우 카운터 방식의 Rate Limiting을 `RateLimitInterceptor`로 구현한다. `WebConfig`에서 엔드포인트별로 인스턴스를 등록하며, 클라이언트 IP는 `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 순서로 추출한다.
+
+| 엔드포인트 | 제한 | 윈도우 |
+|-----------|------|--------|
+| `/public/analyze` | 5회 | 1분 |
+| `/auth/login` | 10회 | 1분 |
+| `/auth/signup` | 3회 | 1분 |
+
+제한 초과 시 HTTP 429 응답과 함께 `Retry-After` 헤더를 반환한다.
+
+### 7.3 JWT 시크릿 검증
+
+`JwtTokenProvider` 생성 시 다음 보안 검증을 수행한다:
+
+- **비-로컬 프로파일**: `JWT_SECRET` 환경변수 설정 필수 (기본값 사용 차단)
+- **키 길이 검증**: Base64 디코딩 후 최소 256비트(32바이트) 이상 필수
+- **Refresh Token Rotation**: 토큰 갱신 시 이전 토큰 즉시 무효화, 재사용 시도 감지(replay detection) 시 해당 사용자의 모든 세션 무효화
+
+## 8. 캐싱 계층
+
+Redis를 사용한 다단계 캐싱으로 반복 조회 성능을 최적화한다. `RedisConfig`에서 캐시별 TTL을 설정한다.
+
+### 8.1 캐시 구성
+
+| 캐시 이름 | TTL | 용도 | 비고 |
+|-----------|-----|------|------|
+| `dashboard` | 30초 | 종합 대시보드 조회 | 짧은 TTL로 실시간성 유지 |
+| `publicAnalysis` | 5분 | 공개 SEO 분석 결과 | COMPLETED 상태만 캐시 |
+| `publicRanking` | 2분 | 공개 SEO 점수 랭킹 | 새 분석 완료 시 evict |
+| 기본 | 1분 | 그 외 캐시 항목 | 기본 TTL |
+
+### 8.2 캐시 무효화 전략
+
+```
+[공개 분석 완료]
+    ├── @CacheEvict("publicRanking", allEntries=true)  ← 랭킹 목록 갱신
+    └── @Cacheable("publicAnalysis", key="#id")         ← 개별 결과 캐시
+
+[대시보드 조회]
+    └── @Cacheable("dashboard")                         ← 30초 TTL 자동 만료
+```
+
+- `publicRanking`: 새로운 공개 분석이 완료될 때마다 전체 evict (순위 변동 반영)
+- `publicAnalysis`: 분석 ID 기준 개별 캐시, COMPLETED 상태가 아니면 캐시하지 않음
+- Fallback: Redis 장애 시 Caffeine 인메모리 캐시로 전환 가능
+
+## 9. 병렬 크롤링
+
+### 9.1 Virtual Threads + Semaphore 기반 BFS 크롤링
+
+`CrawlEngine`은 Java Virtual Threads와 Semaphore를 조합하여 BFS(너비 우선 탐색) 레벨별 병렬 페이지 fetch를 수행한다.
+
+```
+[BFS 레벨별 병렬 크롤링]
+
+레벨 0: [시작 URL]
+         │ fetch (1개)
+         v
+레벨 1: [링크A] [링크B] [링크C] [링크D] [링크E]
+         │ Virtual Threads + Semaphore(동시 N개)
+         │ CompletableFuture 병렬 fetch
+         v
+레벨 2: [링크F] [링크G] ... [링크N]
+         │ 동일 방식 병렬 fetch
+         v
+    (maxDepth 또는 maxPages 도달 시 종료)
+```
+
+핵심 설계:
+- **`Executors.newVirtualThreadPerTaskExecutor()`**: URL별 Virtual Thread 할당, OS 스레드 고갈 없이 대량 동시 요청 가능
+- **`Semaphore(concurrency)`**: 대상 서버 부하 제어를 위한 동시 요청 수 제한 (`CrawlerProperties.maxConcurrentRequests`)
+- **BFS 레벨 단위 실행**: 같은 depth의 URL들을 한꺼번에 병렬 fetch한 후, 발견된 링크를 다음 레벨로 전달
+- **취소 지원**: `AtomicBoolean cancelFlag`로 레벨 간, 태스크 간 취소 확인
+- **Polite Crawling**: Semaphore 해제 전 `delayBetweenRequestsMs`만큼 대기하여 대상 서버에 예의 유지
+
+## 10. 트랜잭션 관리
+
+### 10.1 CrawlBatchPersister - 배치 트랜잭션 분리
+
+크롤링은 수분~수십 분 소요될 수 있으므로, 전체 크롤링을 하나의 트랜잭션으로 감싸면 DB 커넥션 고갈과 장시간 락 문제가 발생한다. 이를 방지하기 위해 `CrawlBatchPersister`가 독립 트랜잭션(`Propagation.REQUIRES_NEW`)으로 10건 단위 배치 저장을 수행한다.
+
+```
+[CrawlExecutionService.executeCrawl()] ← 트랜잭션 없음 (비트랜잭셔널)
+    │
+    ├── batchPersister.markRunning()         ← TX #1 (REQUIRES_NEW)
+    │
+    ├── for (10건 단위 배치):
+    │     └── batchPersister.saveBatch()     ← TX #2, #3, #4, ... (각각 REQUIRES_NEW)
+    │           ├── CrawlResult persist
+    │           ├── PageAnalysis persist
+    │           ├── flush()
+    │           └── clear()                  ← 영속성 컨텍스트 초기화 (메모리 관리)
+    │
+    ├── batchPersister.markCompleted()       ← TX #N (REQUIRES_NEW)
+    │
+    └── batchPersister.updateSiteScore()     ← TX #N+1 (REQUIRES_NEW)
+```
+
+이점:
+- **DB 커넥션 효율**: 각 배치 트랜잭션이 빠르게 커밋/반환되어 커넥션 풀을 점유하지 않음
+- **메모리 관리**: `flush()` + `clear()`로 영속성 컨텍스트를 배치마다 초기화
+- **부분 실패 복구**: 크롤링 중 오류 발생 시 이미 저장된 배치는 보존됨
+- **상태 추적**: `markRunning()`, `markCompleted()`, `markFailed()` 각각 독립 트랜잭션
+
+## 11. 이벤트 기반 처리
+
+### 11.1 @TransactionalEventListener(AFTER_COMMIT) + @Async 패턴
+
+크롤링 시작과 같은 비동기 작업은 이벤트 기반으로 트리거된다. `@TransactionalEventListener(phase = AFTER_COMMIT)`와 `@Async`를 조합하여, CrawlJob 생성 트랜잭션이 커밋된 후에만 실제 크롤링이 시작되도록 보장한다.
+
+```
+[CrawlService.startCrawl()]
+    │
+    ├── CrawlJob 생성 + 저장 (INSERT)
+    ├── ApplicationEventPublisher.publishEvent(CrawlStartedEvent)
+    ├── 트랜잭션 커밋                    ← DB에 CrawlJob이 확실히 존재
+    │
+    └── @TransactionalEventListener(AFTER_COMMIT)
+        └── @Async("crawlExecutor")
+            └── CrawlEventListener.handleCrawlStarted()
+                └── CrawlExecutionService.executeCrawl()
+```
+
+이 패턴이 필요한 이유:
+- **데이터 가시성**: `@Async`만 사용하면 비동기 스레드가 아직 커밋되지 않은 CrawlJob을 조회하여 실패할 수 있음
+- **AFTER_COMMIT 보장**: 이벤트 리스너가 트랜잭션 커밋 완료 후에만 호출되므로, 크롤링 시작 시 CrawlJob 데이터가 DB에 확실히 존재
+- **스레드 분리**: `@Async("crawlExecutor")`로 크롤링이 별도 스레드 풀에서 실행되어 HTTP 요청 스레드를 차단하지 않음
+- **안전 마진**: 500ms 지연을 추가하여 트랜잭션 전파 완료를 보장
+
+## 12. 확장성 고려사항
+
+### 12.1 수평 확장 포인트
 
 | 컴포넌트 | 현재 | 10x 확장 시 |
 |----------|------|-------------|
@@ -518,7 +674,7 @@ dependencies {
 | DB | 단일 PG | Read Replica + Connection Pool |
 | 캐시 | 단일 Redis | Redis Cluster |
 
-### 7.2 성능 병목 예측 및 대응
+### 12.2 성능 병목 예측 및 대응
 
 | 병목 지점 | 증상 | 대응 |
 |-----------|------|------|
@@ -527,7 +683,7 @@ dependencies {
 | AI API Rate Limit | 콘텐츠 분석 대기열 증가 | 요청 큐잉 + Rate Limiter + 멀티 프로바이더 |
 | Redis 메모리 | 캐시 eviction 빈번 | TTL 최적화 + 메모리 증설 |
 
-### 7.3 마이크로서비스 전환 경로
+### 12.3 마이크로서비스 전환 경로
 
 현재 모놀리식 멀티모듈 구조에서, 필요 시 다음 순서로 분리:
 
