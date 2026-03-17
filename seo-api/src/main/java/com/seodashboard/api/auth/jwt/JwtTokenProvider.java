@@ -21,12 +21,27 @@ public class JwtTokenProvider {
     private final long accessTokenExpiration;
     private final long refreshTokenExpiration;
 
+    private static final String WEAK_DEFAULT_PREFIX = "c2VvLWRhc2hib2FyZC1zZWNyZXQ";
+
     public JwtTokenProvider(
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.access-token-expiration}") long accessTokenExpiration,
-            @Value("${jwt.refresh-token-expiration}") long refreshTokenExpiration
+            @Value("${jwt.refresh-token-expiration}") long refreshTokenExpiration,
+            @Value("${spring.profiles.active:default}") String activeProfile
     ) {
-        this.secretKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
+        if (!activeProfile.contains("local") && !activeProfile.equals("default")) {
+            if (secret.startsWith(WEAK_DEFAULT_PREFIX)) {
+                throw new IllegalStateException(
+                        "JWT_SECRET environment variable must be set with a strong secret for non-local profiles. " +
+                        "Generate one with: openssl rand -base64 64"
+                );
+            }
+        }
+        byte[] keyBytes = Decoders.BASE64.decode(secret);
+        if (keyBytes.length < 32) {
+            throw new IllegalStateException("JWT secret must be at least 256 bits (32 bytes) when Base64-decoded");
+        }
+        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
         this.accessTokenExpiration = accessTokenExpiration;
         this.refreshTokenExpiration = refreshTokenExpiration;
     }
