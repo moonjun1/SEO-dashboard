@@ -24,6 +24,8 @@ public class PageFetcher {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
+    private static final long MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB
+
     public FetchResult fetch(String url) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -38,6 +40,13 @@ public class PageFetcher {
             long startTime = System.currentTimeMillis();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             int responseTimeMs = (int) (System.currentTimeMillis() - startTime);
+
+            // Reject responses larger than 5MB to prevent OOM
+            if (response.body() != null && response.body().length() > MAX_BODY_SIZE) {
+                log.warn("Response too large for {}: {} bytes", url, response.body().length());
+                return new FetchResult(0, null, null, 0L, responseTimeMs, null,
+                        "Response body exceeds maximum size of 5MB");
+            }
 
             String contentType = response.headers()
                     .firstValue("Content-Type")
