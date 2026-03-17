@@ -92,13 +92,58 @@ https://api.seodashboard.com/api/v1
 
 ### 1.6 Rate Limiting
 
-| 엔드포인트 그룹 | 제한 | 윈도우 |
-|-----------------|------|--------|
-| 인증 API | 10회 | 1분 |
-| 크롤링 시작 | 5회 | 1시간 |
-| AI 분석 | 20회 | 1시간 |
-| 일반 조회 API | 100회 | 1분 |
-| 리포트 생성 | 10회 | 1시간 |
+IP 기반 슬라이딩 윈도우 카운터 방식(`RateLimitInterceptor`)으로 구현한다. 클라이언트 IP는 `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 순서로 추출한다.
+
+| 엔드포인트 | 제한 | 윈도우 | 구분 |
+|-----------|------|--------|------|
+| `/public/analyze` | 5회 | 1분 | IP 단위 |
+| `/auth/login` | 10회 | 1분 | IP 단위 |
+| `/auth/signup` | 3회 | 1분 | IP 단위 |
+| 크롤링 시작 | 5회 | 1시간 | 사용자 단위 |
+| AI 분석 | 20회 | 1시간 | 사용자 단위 |
+| 일반 조회 API | 100회 | 1분 | 사용자 단위 |
+| 리포트 생성 | 10회 | 1시간 | 사용자 단위 |
+
+**429 Too Many Requests 응답:**
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests. Please try again later."
+  }
+}
+```
+
+응답 헤더에 `Retry-After: {남은 윈도우 초}` 가 포함된다.
+
+### 1.7 API 문서 (Swagger / OpenAPI)
+
+개발 환경에서 Swagger UI를 통해 API를 테스트할 수 있다:
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+
+**주의**: 운영 프로파일(`prod`)에서는 Swagger UI와 OpenAPI 스펙이 비활성화된다. `application-prod.yml`에서 `springdoc.api-docs.enabled=false`, `springdoc.swagger-ui.enabled=false`로 설정되어 있다.
+
+### 1.8 SSRF 보호
+
+서버 측에서 사용자 입력 URL을 fetch하는 엔드포인트(`/public/analyze`)에는 SSRF(Server-Side Request Forgery) 방어가 적용된다. `UrlValidator.validateForFetch()`가 다음을 차단한다:
+- 사설 IP (10.x, 172.16~31.x, 192.168.x), 루프백 (127.0.0.1), localhost
+- 링크-로컬 (169.254.x.x), 클라우드 메타데이터 엔드포인트 (169.254.169.254)
+- HTTP/HTTPS 이외 스킴 (file://, ftp:// 등)
+
+차단 시 400 Bad Request로 응답한다:
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Requests to private/internal IP addresses are not allowed: {host}"
+  }
+}
+```
 
 ---
 
@@ -180,6 +225,15 @@ POST /auth/refresh
 
 **Request**: Cookie에 포함된 `refresh_token` 자동 전송
 
+**Refresh Token Rotation 동작:**
+토큰 갱신 시 Refresh Token Rotation이 적용된다. 아래 순서대로 처리된다:
+
+1. 전달된 refresh token의 유효성 검증 (JWT 서명 + 만료)
+2. **Replay 공격 감지**: 이미 사용(회전)된 토큰이 재사용되면, 해당 사용자의 모든 세션을 즉시 무효화하고 `INVALID_TOKEN` 에러를 반환한다
+3. Redis에 저장된 현재 유효 토큰과 비교
+4. 기존 refresh token을 삭제하고, 사용 이력(used token)을 남은 TTL 동안 Redis에 보관
+5. 새로운 access token + refresh token 쌍을 발급
+
 **Response (200 OK):**
 ```json
 {
@@ -191,6 +245,11 @@ POST /auth/refresh
   }
 }
 ```
+
+**에러 케이스:**
+- 만료된 refresh token → `TOKEN_EXPIRED` (401)
+- 이미 사용된 refresh token 재전송 (replay) → `INVALID_TOKEN` (401) + 해당 사용자 전체 세션 무효화
+- Redis에 존재하지 않는 토큰 → `INVALID_TOKEN` (401)
 
 ### 2.4 로그아웃
 
@@ -1521,7 +1580,90 @@ WS /ws/crawl/{jobId}/progress
 
 ---
 
-## 11. API 엔드포인트 요약표
+## 11. 공개 SEO 분석 API (인증 불필요)
+
+인증 없이 사용할 수 있는 공개 SEO 분석 엔드포인트다. Rate Limiting이 적용되며 (`/public/analyze`: IP당 5회/분), SSRF 방어가 활성화되어 있다.
+
+### 11.1 URL SEO 분석
+
+```
+POST /public/analyze
+```
+
+**Rate Limit**: IP당 5회/분 (초과 시 429 응답)
+
+**SSRF 보호**: 사설 IP, 루프백, 클라우드 메타데이터 주소 차단
+
+**Request Body:**
+```json
+{
+  "url": "https://example.com"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "url": "https://example.com",
+    "domain": "example.com",
+    "seoScore": 78.5,
+    "titleScore": 80.0,
+    "metaDescriptionScore": 70.0,
+    "headingScore": 85.0,
+    "imageScore": 60.0,
+    "linkScore": 75.0,
+    "performanceScore": 82.0,
+    "title": "Example Domain",
+    "metaDescription": "...",
+    "responseTimeMs": 320,
+    "status": "COMPLETED",
+    "createdAt": "2026-03-16T12:00:00"
+  }
+}
+```
+
+### 11.2 분석 결과 조회
+
+```
+GET /public/analyze/{id}
+```
+
+**캐시**: `publicAnalysis` (TTL 5분, COMPLETED 상태만 캐시)
+
+**Response (200 OK):** 11.1과 동일한 구조 (상세 필드 포함)
+
+### 11.3 최근 분석 목록
+
+```
+GET /public/recent
+```
+
+**Response (200 OK):** 최근 20건의 분석 요약 목록
+
+### 11.4 SEO 점수 랭킹
+
+```
+GET /public/ranking
+```
+
+**캐시**: `publicRanking` (TTL 2분, 새 분석 완료 시 evict)
+
+**Response (200 OK):** SEO 점수 상위 50건의 분석 요약 목록
+
+### 11.5 도메인별 분석 이력
+
+```
+GET /public/domain/{domain}
+```
+
+**Response (200 OK):** 특정 도메인의 분석 이력 목록
+
+---
+
+## 12. API 엔드포인트 요약표
 
 | 메서드 | URL | 인증 | 설명 |
 |--------|-----|------|------|
@@ -1571,6 +1713,12 @@ WS /ws/crawl/{jobId}/progress
 | GET | `/notifications/unread-count` | O | 읽지 않은 수 |
 | PATCH | `/notifications/{notificationId}/read` | O | 읽음 처리 |
 | PATCH | `/notifications/read-all` | O | 일괄 읽음 |
+| **공개 SEO** | | | |
+| POST | `/public/analyze` | X | URL SEO 분석 (Rate Limit: 5회/분) |
+| GET | `/public/analyze/{id}` | X | 분석 결과 조회 |
+| GET | `/public/recent` | X | 최근 분석 목록 |
+| GET | `/public/ranking` | X | SEO 점수 랭킹 |
+| GET | `/public/domain/{domain}` | X | 도메인별 분석 이력 |
 | **WebSocket** | | | |
 | WS | `/ws/notifications` | O | 실시간 알림 |
 | WS | `/ws/crawl/{jobId}/progress` | O | 크롤링 진행 상황 |
