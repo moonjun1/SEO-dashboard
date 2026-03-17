@@ -2,6 +2,7 @@ package com.seodashboard.crawler.engine;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.seodashboard.common.util.UrlUtils;
 import com.seodashboard.crawler.analyzer.SeoAnalyzer;
 import com.seodashboard.crawler.config.CrawlerProperties;
 import com.seodashboard.crawler.dto.CrawlPageResult;
@@ -10,13 +11,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
@@ -32,63 +36,110 @@ public class CrawlEngine {
     public CrawlEngineResult crawl(String startUrl, int maxPages, int maxDepth, AtomicBoolean cancelFlag) {
         List<CrawlPageResult> results = new ArrayList<>();
         Set<String> visited = new HashSet<>();
-        Queue<UrlWithDepth> queue = new ArrayDeque<>();
-        int errorCount = 0;
+        AtomicInteger errorCount = new AtomicInteger(0);
 
-        String baseDomain = extractDomain(startUrl);
+        String baseDomain = UrlUtils.extractDomain(startUrl);
         boolean hasSitemap = checkSitemap(baseDomain, startUrl);
         boolean hasRobotsTxt = checkRobotsTxt(baseDomain, startUrl);
 
-        String normalizedStartUrl = normalizeUrl(startUrl);
-        queue.add(new UrlWithDepth(normalizedStartUrl, 0));
+        String normalizedStartUrl = UrlUtils.normalizeUrl(startUrl);
         visited.add(normalizedStartUrl);
 
-        while (!queue.isEmpty() && results.size() < maxPages) {
-            if (cancelFlag.get()) {
-                log.info("Crawl cancelled. Processed {} pages so far.", results.size());
-                break;
-            }
+        // BFS level-by-level: each level is fetched in parallel
+        List<UrlWithDepth> currentLevel = List.of(new UrlWithDepth(normalizedStartUrl, 0));
 
-            UrlWithDepth current = queue.poll();
+        int concurrency = Math.max(1, crawlerProperties.getMaxConcurrentRequests());
+        Semaphore semaphore = new Semaphore(concurrency);
+        long delayMs = crawlerProperties.getDelayBetweenRequestsMs();
 
-            try {
-                CrawlPageResult pageResult = processPage(current.url(), current.depth(),
-                        baseDomain, hasSitemap, hasRobotsTxt);
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            while (!currentLevel.isEmpty() && results.size() < maxPages) {
+                if (cancelFlag.get()) {
+                    log.info("Crawl cancelled. Processed {} pages so far.", results.size());
+                    break;
+                }
 
-                if (pageResult != null) {
-                    results.add(pageResult);
+                // Cap the batch to remaining page budget
+                int remaining = maxPages - results.size();
+                List<UrlWithDepth> batch = currentLevel.size() <= remaining
+                        ? currentLevel
+                        : currentLevel.subList(0, remaining);
 
-                    // Enqueue internal links if within depth limit
-                    if (current.depth() < maxDepth && pageResult.getInternalLinks() != null) {
-                        for (String link : pageResult.getInternalLinks()) {
-                            String normalized = normalizeUrl(link);
-                            if (!visited.contains(normalized) && visited.size() < maxPages * 2) {
-                                visited.add(normalized);
-                                queue.add(new UrlWithDepth(normalized, current.depth() + 1));
-                            }
+                // Submit parallel fetch tasks for this BFS level
+                List<CompletableFuture<PageFetchOutcome>> futures = new ArrayList<>(batch.size());
+                for (UrlWithDepth item : batch) {
+                    futures.add(CompletableFuture.supplyAsync(() -> {
+                        if (cancelFlag.get()) {
+                            return null;
                         }
-                    }
-                } else {
-                    errorCount++;
+                        try {
+                            semaphore.acquire();
+                            try {
+                                CrawlPageResult pageResult = processPage(
+                                        item.url(), item.depth(), baseDomain, hasSitemap, hasRobotsTxt);
+                                // Per-thread delay to be polite to the target server
+                                if (delayMs > 0) {
+                                    Thread.sleep(delayMs);
+                                }
+                                return new PageFetchOutcome(item, pageResult);
+                            } finally {
+                                semaphore.release();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            log.warn("Crawl interrupted at URL: {}", item.url());
+                            return null;
+                        } catch (Exception e) {
+                            log.warn("Error processing URL {}: {}", item.url(), e.getMessage());
+                            errorCount.incrementAndGet();
+                            return null;
+                        }
+                    }, executor));
                 }
 
-                // Delay between requests
-                if (!queue.isEmpty() && crawlerProperties.getDelayBetweenRequestsMs() > 0) {
-                    Thread.sleep(crawlerProperties.getDelayBetweenRequestsMs());
+                // Collect results from this level and discover next-level URLs
+                List<UrlWithDepth> nextLevel = new ArrayList<>();
+                for (CompletableFuture<PageFetchOutcome> future : futures) {
+                    if (cancelFlag.get()) {
+                        break;
+                    }
+                    try {
+                        PageFetchOutcome outcome = future.join();
+                        if (outcome == null) {
+                            continue;
+                        }
+                        CrawlPageResult pageResult = outcome.result();
+                        if (pageResult != null) {
+                            results.add(pageResult);
+                            // Enqueue internal links if within depth limit
+                            int nextDepth = outcome.source().depth() + 1;
+                            if (nextDepth <= maxDepth && pageResult.getInternalLinks() != null) {
+                                for (String link : pageResult.getInternalLinks()) {
+                                    String normalized = UrlUtils.normalizeUrl(link);
+                                    if (!visited.contains(normalized) && visited.size() < maxPages * 2) {
+                                        visited.add(normalized);
+                                        nextLevel.add(new UrlWithDepth(normalized, nextDepth));
+                                    }
+                                }
+                            }
+                        } else {
+                            errorCount.incrementAndGet();
+                        }
+                    } catch (Exception e) {
+                        log.warn("Error collecting crawl result: {}", e.getMessage());
+                        errorCount.incrementAndGet();
+                    }
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Crawl interrupted at URL: {}", current.url());
-                break;
-            } catch (Exception e) {
-                log.warn("Error processing URL {}: {}", current.url(), e.getMessage());
-                errorCount++;
+
+                currentLevel = nextLevel;
             }
         }
 
-        log.info("Crawl completed. Pages: {}, Errors: {}", results.size(), errorCount);
-        return new CrawlEngineResult(results, errorCount);
+        log.info("Crawl completed. Pages: {}, Errors: {}", results.size(), errorCount.get());
+        return new CrawlEngineResult(results, errorCount.get());
     }
+
+    private record PageFetchOutcome(UrlWithDepth source, CrawlPageResult result) {}
 
     private CrawlPageResult processPage(String url, int depth, String baseDomain,
                                           boolean hasSitemap, boolean hasRobotsTxt) {
@@ -177,26 +228,6 @@ public class CrawlEngine {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    private String extractDomain(String url) {
-        try {
-            URI uri = URI.create(url);
-            return uri.getHost() != null ? uri.getHost().toLowerCase() : "";
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private String normalizeUrl(String url) {
-        int fragmentIndex = url.indexOf('#');
-        if (fragmentIndex > 0) {
-            url = url.substring(0, fragmentIndex);
-        }
-        if (url.endsWith("/") && url.length() > 1) {
-            url = url.substring(0, url.length() - 1);
-        }
-        return url;
     }
 
     private record UrlWithDepth(String url, int depth) {}
